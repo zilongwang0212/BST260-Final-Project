@@ -1,0 +1,185 @@
+---
+title: "Supplementary Methods"
+format: pdf
+editor: visual
+---
+
+```{r}
+#| echo: false
+#| message: FALSE
+# Data Wrangling
+library(readxl)
+library(stringr)
+library(lubridate)
+library(ggplot2)
+library(tidyverse)
+library(patchwork)
+library(httr2)
+library(gridExtra)
+
+api <- "https://data.cdc.gov/resource/pwn4-m3yp.json"
+cases_raw <-  request(api) |> 
+  req_url_path_append("?$limit=10000000000") |>
+  req_perform() |> 
+  resp_body_json(simplifyVector = TRUE) |> 
+  as_tibble() 
+
+cases <- cases_raw |> 
+  select(state, date = end_date, cases = new_cases) |>
+  mutate(date = as.Date(date, format = "%Y-%m-%d"),
+         cases = as.numeric(cases),
+         mmwr_week = epiweek(date),
+         year = year(date)) |>
+  filter(state %in% state.abb | state %in% c("PR", "DC")) 
+
+api <- "https://data.cdc.gov/resource/r8kw-7aab.json"
+deaths_raw <-  request(api) |> 
+  req_url_path_append("?$limit=10000000000") |>
+  req_perform() |> 
+  resp_body_json(simplifyVector = TRUE) |> 
+  as_tibble() 
+
+deaths <- deaths_raw |> 
+  select(state_name = state, date = end_date, deaths = covid_19_deaths, mmwr_week) |>
+  mutate(state = state.abb[match(state_name, state.name)]) |>
+  mutate(state = case_when(state_name == "Puerto Rico" ~ "PR",
+                           state_name == "District of Columbia" ~ "DC",
+                           TRUE ~ state)) |>
+  na.omit() |> 
+  mutate(date = as.Date(date, format = "%Y-%m-%d"),
+         deaths = as.numeric(deaths),
+         mmwr_week = parse_number(mmwr_week),
+         year = year(date)) |>
+  select(state, mmwr_week, deaths, year)
+
+cases_deaths <- left_join(cases, deaths, by = c("state", "year", "mmwr_week")) |>
+   na.omit()
+
+population_raw <- read_excel("~/Desktop/BST260/BST260-Final-Project/data/raw-data/NST-EST2023-POP.xlsx") |>
+  slice(-c(1:8)) |> # Remove the region-level data
+  select(-2) # Remove the data based on 2020-04-01
+
+colnames(population_raw) <- c("state_name", "2020", "2021", "2022", "2023") # Rename each column
+
+population <- population_raw |>
+  mutate(state_name = str_remove(state_name, "^\\.")) |>
+  mutate(across(-state_name, as.numeric)) |>
+  pivot_longer(-state_name, names_to = "year", values_to = "population") |>
+  mutate(state = state.abb[match(state_name, state.name)]) |>
+  mutate(state = case_when(state_name == "Puerto Rico" ~ "PR",
+                           state_name == "District of Columbia" ~ "DC",
+                           TRUE ~ state)) |>
+  select(-state_name) |>
+  mutate(across(-state, as.numeric)) 
+
+data <- left_join(cases_deaths, population, by = c("state", "year"))
+```
+
+To provide further support for the claims made in the Results Section, we provide Table 2 to show the number of states with death rates per 100,000 people above 50, 100, 150 in each period. From Table 2, we can see the number of states with death rates above 50 per 100,000 people is 21 in Period 1, only 6 states had death rates above 100, and 1 state had death rates above 150. Then there was a significant increase in death rates during Period 2, the number of states with death rates above 50 increased to 47, and 30 states had death rates above 100, 4 states had death rates above 150. Moving to Period 3, death rates continued to worsen compared to previous periods. 50 states had death rates above 50, and 34 states had death rates above 100. The number of states with death rates above 150 increased to 14. However, for Period 4, there was a noticeable decline in death rates compared to Period 3. Only 10 states had death rates above 50, and 0 states reached the thresholds of 100 or 150 deaths per 100,000 people. Therefore, death rates peaked during Period 3 across all thresholds (above 50, 100, and 150). A sharp decline occurred in Period 4, indicating a significant improvement in controlling COVID-19 death rates after the peak.
+
+\begin{longtable}
+{|l|>{\centering\arraybackslash}p{4cm}|>{\centering\arraybackslash}p{4cm}|>{\centering\arraybackslash}p{4cm}|}
+\caption{Number of States with Death Rate per 100,000 People above 50, 100, 150} \label{tab:death_rates_states} \\
+\hline
+\textbf{} & \multicolumn{3}{c|}{\textbf{The number of states}} \\ \cline{2-4}
+\textbf{} & \textbf{Death rates per 100,000 people above 50} & \textbf{Death rates per 100,000 people above 100} & \textbf{Death rates per 100,000 people above 150} \\ \hline
+\textbf{Period 1} & 21 & 6 & 1 \\ \hline
+\textbf{Period 2} & 47 & 30 & 4 \\ \hline
+\textbf{Period 3} & 50 & 34 & 14 \\ \hline
+\textbf{Period 4} & 10 & 0 & 0 \\ \hline
+\end{longtable}
+
+And we also provide the box plot (Fig.4) to see the death rates distribution for each state by period. Fig.4 shows a more visual result related to Table 2.
+
+```{r, fig.width=10, fig.height=6}
+#| echo: false
+# Calculate the deaths rates by state in the first period, January 2020 to September 2020
+deaths_rate_period1 <- data |>
+  filter(date <= as.Date("2020-09-30")) |>
+  group_by(state) |>
+  summarise(deaths = sum(deaths),
+            population = mean(population),
+            .groups = "drop") |>
+  mutate(deaths_rate_period1 = deaths / population * 100000)
+  
+# Calculate the deaths rates by state in the second period, October 2020 to June 2021
+deaths_rate_period2 <- data |>
+  filter(date >= as.Date("2020-10-01") & date <= as.Date("2021-06-30")) |>
+  group_by(state) |>
+  summarise(deaths = sum(deaths),
+            population = mean(population),
+            .groups = "drop") |>
+  mutate(deaths_rate_period2 = deaths / population * 100000)
+
+# Calculate the deaths rates by state in the third period, July 2021 to April 2022
+deaths_rate_period3 <- data |>
+  filter(date >= as.Date("2021-07-01") & date <= as.Date("2022-04-30")) |>
+  group_by(state) |>
+  summarise(deaths = sum(deaths),
+            population = mean(population),
+            .groups = "drop") |>
+  mutate(deaths_rate_period3 = deaths / population * 100000)
+
+# Calculate the deaths rates by state in the fourth period, May 2022 to May 2023
+deaths_rate_period4 <- data |>
+  filter(date >= as.Date("2022-05-01")) |>
+  group_by(state) |>
+  summarise(deaths = sum(deaths),
+            population = mean(population),
+            .groups = "drop") |>
+  mutate(deaths_rate_period4 = deaths / population * 100000)
+
+# Combine all death rates in different periods to one dataset
+deaths_rate <- left_join(deaths_rate_period1, deaths_rate_period2, by = "state") |>
+  left_join(deaths_rate_period3, by = "state") |>
+  left_join(deaths_rate_period4, by = "state") |>
+  select(state, deaths_rate_period1, deaths_rate_period2, 
+         deaths_rate_period3, deaths_rate_period4)
+
+
+
+figs_4 <- deaths_rate |> 
+  pivot_longer(cols = starts_with("deaths_rate_period"),
+               names_to = "period",
+               values_to = "deaths_rate") |>
+  mutate(period = recode(period, 
+                         "deaths_rate_period1" = "Period 1",
+                         "deaths_rate_period2" = "Period 2",
+                         "deaths_rate_period3" = "Period 3",
+                         "deaths_rate_period4" = "Period 4")) |>
+  ggplot(aes(x = period, y = deaths_rate, fill = period)) +
+  geom_boxplot(outlier.color = "red", outlier.size = 2) +
+  labs(title = "Figure 4: Death Rates Distribution for Each State by Period",
+       x = "Period",
+       y = "Death Rate per 100,000 People") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text.x = element_text(size = 12),
+    axis.title = element_text(size = 14))
+
+figs_4
+```
+
+And for the better understanding to the calculation of rates, we also probide the mathematical derivations.
+
+Here we define:
+
+\begin{equation*}
+\textit{Death Rate per } 100,000 \, \textit{people} = 
+\frac{\textit{Numbers of death in one specific period}}
+{\textit{Population in this period}} \times 100,000
+\end{equation*}
+\begin{equation*}
+\textit{Case Rate per } 100,000 \, \textit{people} = 
+\frac{\textit{Numbers of case in one specific period}}
+{\textit{Population in this period}} \times 100,000
+\end{equation*}
+
+If this period spans two different years, we define:
+
+\begin{equation*}
+\textit{Population in this period} = 
+\frac{\textit{Sum of population in two years}}{2}
+\end{equation*}
