@@ -162,7 +162,7 @@ figs_4 <- deaths_rate |>
 figs_4
 ```
 
-And for the better understanding to the calculation of rates, we also probide the mathematical derivations.
+And for the better understanding to the calculation of rates, we also provide the mathematical derivations.
 
 Here we define:
 
@@ -170,8 +170,7 @@ Here we define:
 \textit{Death Rate per } 100,000 \, \textit{people} = 
 \frac{\textit{Numbers of death in one specific period}}
 {\textit{Population in this period}} \times 100,000
-\end{equation*}
-\begin{equation*}
+\end{equation*} \begin{equation*}
 \textit{Case Rate per } 100,000 \, \textit{people} = 
 \frac{\textit{Numbers of case in one specific period}}
 {\textit{Population in this period}} \times 100,000
