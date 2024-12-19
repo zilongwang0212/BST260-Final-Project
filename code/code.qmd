@@ -382,6 +382,4 @@ figs_4 <- deaths_rate |>
     axis.title = element_text(size = 14))
 
 figs_4
-
-
 ```
